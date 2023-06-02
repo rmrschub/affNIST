@@ -1,3 +1,4 @@
+import itertools
 import urllib.parse
 from typing import Any
 
@@ -9,7 +10,7 @@ from tensorflow_datasets.core import split_builder as split_builder_lib
 
 # affNIST constants
 _affNIST_URL = "https://www.cs.toronto.edu/~tijmen/affNIST/"
-_affNIST_DOWNLOAD_URL = "https://www.cs.toronto.edu/~tijmen/affNIST/"
+_affNIST_DOWNLOAD_URL = "https://github.com/rmrschub/affNIST/raw/main/"
 _affNIST_TRAIN_DATA_FILENAME = "affNIST_training_x.npz"
 _affNIST_TRAIN_LABELS_FILENAME = "affNIST_training_y.npz"
 _affNIST_VALIDATION_DATA_FILENAME = "affNIST_validation_x.npz"
@@ -54,7 +55,7 @@ class AffNIST(tfds.core.GeneratorBasedBuilder):
             citation=_affNIST_CITATION,
         )
 
-    def _split_generators(self):
+    def _split_generators(self, dl_manager):
         """Returns SplitGenerators."""
         filenames = {
             "train_data": _affNIST_TRAIN_DATA_FILENAME,
@@ -65,37 +66,29 @@ class AffNIST(tfds.core.GeneratorBasedBuilder):
             "test_labels": _affNIST_TEST_LABELS_FILENAME,
         }
 
-        data = {
-            k: np.load(io.BytesIO(requests.get(urllib.parse.urljoin(self.URL, v)).content))
-            for k, v in filenames.items()
+        affNIST_files = dl_manager.download_and_extract(
+            {k: urllib.parse.urljoin(self.URL, v) for k, v in filenames.items()}
+        )
+
+        return {
+            'train': self._generate_examples(
+                images_path=affNIST_files["train_data"],
+                label_path=affNIST_files["train_labels"]
+            ),
+            'test': self._generate_examples(
+                images_path=affNIST_files["test_data"],
+                label_path=affNIST_files["test_labels"]
+            ),
+            'validation': self._generate_examples(
+                images_path=affNIST_files["validation_data"],
+                label_path=affNIST_files["validation_labels"]
+            )
         }
 
-        return [
-            tfds.core.SplitGenerator(
-                name=tfds.Split.TRAIN,
-                gen_kwargs=dict(
-                    num_examples=_TRAIN_EXAMPLES,
-                    data_path=data["train_data"],
-                    label_path=data["train_labels"],
-                ),
-            ),
-            tfds.core.SplitGenerator(
-                name=tfds.Split.VALIDATION,
-                gen_kwargs=dict(
-                    num_examples=_VALIDATION_EXAMPLES,
-                    data_path=data["validation_data"],
-                    label_path=data["validation_labels"],
-                ),
-            ),
-            tfds.core.SplitGenerator(
-                name=tfds.Split.TEST,
-                gen_kwargs=dict(
-                    num_examples=_TEST_EXAMPLES,
-                    data_path=data["test_data"],
-                    label_path=data["test_labels"],
-                ),
-            ),
-        ]
+    def _generate_examples(self, images_path, label_path):
+        images = np.load(images_path)['arr_0']
+        labels = np.load(label_path)['arr_0']
 
-    def _generate_examples(self, **kwargs: Any) -> split_builder_lib.SplitGenerator:
-        pass
+        for id, (image, label) in enumerate(zip(images, labels)):
+            yield id, {'image': image, 'label': label}
+
